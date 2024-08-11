@@ -1,0 +1,2 @@
+# SektaBot
+Discord bot

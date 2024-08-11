@@ -1,2 +1,5 @@
 discord
 python-dotenv
+websocket-client
+pillow
+websockets

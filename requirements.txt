@@ -22,13 +22,30 @@ frozenlist==1.4.1
     # via
     #   aiohttp
     #   aiosignal
+gevent==24.2.1
+    # via websocket
+greenlet==3.0.3
+    # via
+    #   gevent
+    #   websocket
 idna==3.7
     # via yarl
 multidict==6.0.5
     # via
     #   aiohttp
     #   yarl
+pillow==10.4.0
+    # via -r requirements.in
 python-dotenv==1.0.1
+    # via -r requirements.in
+websocket==0.2.1
     # via -r requirements.in
 yarl==1.9.4
     # via aiohttp
+zope-event==5.0
+    # via gevent
+zope-interface==7.0.1
+    # via gevent
+
+# The following packages are considered to be unsafe in a requirements file:
+# setuptools

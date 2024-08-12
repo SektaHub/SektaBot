@@ -70,7 +70,7 @@ async def zamisli(ctx, *, prompt: str):
                     image_binary.seek(0)
                     await ctx.send(file=discord.File(fp=image_binary, filename=f"{node_id}.png"))
         
-        await ctx.send("All images have been generated and uploaded.")
+        #await ctx.send("All images have been generated and uploaded.")
     
     except asyncio.TimeoutError:
         await ctx.send("The image generation process timed out. Please try again later or with a simpler prompt.")

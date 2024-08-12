@@ -29,56 +29,54 @@ async def get_history_async(session, prompt_id):
     async with session.get(f"http://{server_address}/history/{prompt_id}") as response:
         return await response.json()
 
-async def get_images_async(ws, prompt, session):
-    try:
-        prompt_id = (await queue_prompt_async(session, prompt))['prompt_id']
-        output_images = {}
+async def get_images(ws, prompt, session):
+    prompt_data = await queue_prompt_async(session, prompt)
+    prompt_id = prompt_data['prompt_id']
+    output_images = {}
 
-        while True:
-            out = await asyncio.wait_for(ws.recv(), timeout=180)
-            if isinstance(out, str):
-                message = json.loads(out)
-                logger.debug(f"Received WebSocket message: {message}")
+    while True:
+        out = await ws.recv()  # Await the WebSocket message
+        if isinstance(out, str):
+            message = json.loads(out)
+            logger.debug(f"Received WebSocket message: {message}")
+            if message['type'] == 'status' and 'data' in message:
+                data = message['data']
+                if 'status' in data and 'exec_info' in data['status']:
+                    exec_info = data['status']['exec_info']
+                    queue_remaining = exec_info.get('queue_remaining', None)
+                    sid = data.get('sid', None)
 
-                if message['type'] == 'status' and 'data' in message:
-                    data = message['data']
-                    if 'status' in data and 'exec_info' in data['status']:
-                        exec_info = data['status']['exec_info']
-                        queue_remaining = exec_info.get('queue_remaining', None)
+                    # Check if the queue is empty and execution is done
+                    if queue_remaining == 0 and sid is None:
+                        logger.debug(f"Execution done for prompt_id: {prompt_id}")
+                        break  # Exit the loop when execution is confirmed complete
+        else:
+            logger.debug("Received non-string WebSocket message")
+            continue  # Handle binary data (previews)
 
-                        # Check if the queue is empty and execution is done
-                        if queue_remaining == 0:
-                            logger.debug(f"Queue is empty for prompt_id: {prompt_id}")
-                            break
+    # Fetch history after confirming execution completion
+    for attempt in range(5):  # Retry up to 5 times
+        try:
+            history = await get_history_async(session, prompt_id)
+            if prompt_id in history:
+                history = history[prompt_id]
+                logger.debug(f"Successfully retrieved history for prompt_id: {prompt_id}")
+                break
+        except KeyError:
+            logger.warning(f"Prompt ID {prompt_id} not found in history. Retrying... ({attempt+1}/5)")
+            await asyncio.sleep(2)  # Wait for 2 seconds before retrying
+    else:
+        raise RuntimeError(f"Prompt ID {prompt_id} not found in history after multiple attempts")
 
-            else:
-                logger.debug("Received non-string WebSocket message")
-                continue  # Handle binary data (previews)
+    for node_id, node_output in history['outputs'].items():
+        if 'images' in node_output:
+            images_output = []
+            for image in node_output['images']:
+                image_data = await get_image_async(session, image['filename'], image['subfolder'], image['type'])
+                images_output.append(image_data)
+            output_images[node_id] = images_output
 
-        # Close the WebSocket connection explicitly
-        await ws.close()
-        logger.debug("WebSocket connection closed")
-
-        # Retrieve and process images
-        history = await get_history_async(session, prompt_id)
-        history = history[prompt_id]
-        for node_id, node_output in history['outputs'].items():
-            if 'images' in node_output:
-                images_output = []
-                for image in node_output['images']:
-                    image_data = await get_image_async(session, image['filename'], image['subfolder'], image['type'])
-                    images_output.append(image_data)
-                output_images[node_id] = images_output
-
-        return output_images
-    except asyncio.TimeoutError:
-        logger.error(f"Timeout while waiting for WebSocket message for prompt_id: {prompt_id}")
-        await ws.close()
-        raise
-    except Exception as e:
-        logger.error(f"Error in get_images_async: {str(e)}")
-        await ws.close()  # Ensure WebSocket is closed on error
-        raise  # Re-raise the exception to be caught in the calling function
+    return output_images
 
 async def generate_images_async(prompt_text: str, server_address: str, client_id: str) -> dict:
     try:
@@ -91,8 +89,8 @@ async def generate_images_async(prompt_text: str, server_address: str, client_id
             jsonw["6"]["inputs"]["text"] = prompt_text
 
             # Connect to the WebSocket server
-            async with websockets.connect(f"ws://{server_address}/ws?clientId={client_id}", ping_interval=20, ping_timeout=60) as ws:
-                images = await get_images_async(ws, jsonw, session)
+            async with websockets.connect(f"ws://{server_address}/ws?clientId={client_id}") as ws:
+                images = await get_images(ws, jsonw, session)
 
             # Convert images to PIL Image objects
             pil_images = {}
@@ -104,12 +102,12 @@ async def generate_images_async(prompt_text: str, server_address: str, client_id
 
             return pil_images
     except Exception as e:
-        print(f"Error in generate_images_async: {str(e)}")
+        logger.error(f"Error in generate_images_async: {str(e)}")
         raise  # Re-raise the exception to be caught in the calling function
 
 # Example usage (you can remove this in your actual implementation)
 async def main():
-    prompt_text = "A beautiful sunset over a mountain range"
+    prompt_text = "A beautiful sunset over a mountain range 7"
     images = await generate_images_async(prompt_text, server_address, client_id)
     print(f"Generated {sum(len(img_list) for img_list in images.values())} images")
 
